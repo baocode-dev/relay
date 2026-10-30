@@ -52,6 +52,7 @@ cargo run --example peer -- dial http://127.0.0.1:3340 <id it printed>
 ```sh
 cargo test                       # unit + integration (dev relay, 2 relays, bans, limits, TLS)
 sudo tests/nat/run.sh            # Linux, root: cone / symmetric / no-UDP NATs
+cargo run --release --example soak -- <relay-url> [pairs] [minutes]   # a long run (docs/operations.md)
 ```
 
 On macOS, run the NAT test in a privileged Linux container:

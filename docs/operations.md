@@ -86,6 +86,27 @@ iroh-relay 自带的（前缀 `relayserver_`）：`bytes_sent`、`bytes_recv`、
 - 走中继的流量 = 手机看界面产生的流量 × 走中继的比例。正常使用时，会话增量和终端输出一台设备每天大约几 MB；打开大文件或图片时会有突发。
 - 限速默认是每台设备持续 4 MB/s、突发 16 MB。带宽上限 = 同时活跃的走中继设备数 × 实际速率，正常远低于这个上限。
 
+## 浸泡测试
+
+`examples/soak.rs` 模拟很多对手机和电脑只经一台中继通信：每对每秒各 20 条小消息往返，每 30 秒传 1 MB，每 2 分钟断开重连。上线前（以及升级 iroh 之后）在真实机器上跑一次：
+
+```sh
+# 在另一台机器上（不要和中继同机），对着已部署的中继跑 200 对、2 小时
+cargo build --release --example soak
+./target/release/examples/soak https://relay-hk1.baocode.dev 200 120 | tee soak.log
+
+# 同时在中继机器上每 30 秒记一次内存和 CPU
+while sleep 30; do echo "$(date +%T) $(ps -o rss=,%cpu= -C baocode-relay)"; done | tee rss.log
+```
+
+看什么：
+
+- 每 30 秒一行的 `errors` 一直是 0，`over 1 s`（超过 1 秒的往返）很少；
+- 中继内存涨一段后稳定，不随重连持续增长；
+- 指标里 `relayserver_conns_rx_ratelimited_total` 不涨（200 对的流量远低于限速）。
+
+本机跑过一轮（20 对、10 分钟，中继和客户端同机）：24 万次往返 0 失败、最慢 37 ms，100 次重连全部成功，中继内存稳定在 30 MB 左右、CPU 单核 5–6%。
+
 ## 准入与权益（现在都是同一档）
 
 - `default_tier = "standard"`：所有设备都能用，都是同一档。
