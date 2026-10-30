@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  # Two NATs and the relay in network namespaces: direct through cone
+  # NATs, working through a symmetric one, relayed without UDP.
+  nat:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq conntrack
+      - run: cargo build --release --locked --bin baocode-relay --example peer
+      - run: sudo bash tests/nat/run.sh target/release
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+      - run: cargo build --release --locked --bin baocode-relay
+      - name: Package
+        run: |
+          name=baocode-relay-${GITHUB_REF_NAME//\//-}-linux-${{ matrix.arch }}
+          mkdir -p "$name"
+          cp target/release/baocode-relay "$name/"
+          cp -r deploy "$name/"
+          cp README.md docs/operations.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: ${{ env.ARCHIVE }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, nat]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "" *.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}

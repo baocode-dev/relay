@@ -1,0 +1,51 @@
+# /etc/baocode-relay/relay.toml
+# Read again every few seconds for [limits]; other changes need a restart.
+
+# This machine's domain. Its DNS record must point straight at the machine
+# (no CDN proxy): UDP 7842 and the WebSocket need it.
+hostname = "relay-hk1.baocode.dev"
+
+# QUIC address discovery on UDP 7842, which hole punching needs.
+quic = true
+metrics = true
+
+[bind]
+http = "[::]:80"          # captive portal probes (ACME itself uses TLS-ALPN on 443)
+https = "[::]:443"        # the relay (WebSocket over TLS)
+quic = "[::]:7842"
+metrics = "127.0.0.1:9090"
+
+[tls]
+mode = "letsencrypt"
+contact = "ops@baocode.dev"
+dir = "/var/lib/baocode-relay/certs"
+# staging = true          # try the setup out first without Let's Encrypt's rate limits
+
+# Or certificates you renew yourself (read again hourly):
+# [tls]
+# mode = "files"
+# cert = "/etc/baocode-relay/cert.pem"
+# key = "/etc/baocode-relay/key.pem"
+
+# What each connection may send the relay. A device has one connection
+# per relay and talks to one other, so this holds both directions.
+[limits]
+bytes_per_second = 4194304   # 4 MiB/s
+burst_bytes = 16777216       # 16 MiB
+
+# Reserved for paid tiers: not enforced one by one yet ([limits] applies
+# to everyone); see docs/operations.md.
+# [tiers.standard]
+# bytes_per_second = 4194304
+# burst_bytes = 16777216
+
+[access]
+# Everyone not listed gets this tier; "" admits only the entitled.
+default_tier = "standard"
+banned = "/etc/baocode-relay/banned.txt"
+# entitlements = "/etc/baocode-relay/entitlements.json"
+# entitlements_url = "https://accounts.baocode.dev/relay/entitlements"
+# entitlements_token = "..."
+cache = "/var/lib/baocode-relay/entitlements.cache.json"
+reload_secs = 5
+refresh_secs = 300

@@ -1,0 +1,3 @@
+# One device id (64 hex) a line, then why. Read again within seconds;
+# a banned device connected now is disconnected.
+# 3f1c...e9a0 abuse report 2026-11-02
