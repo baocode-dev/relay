@@ -55,8 +55,8 @@ pub struct Entitlements {
 
 impl Entitlements {
     pub fn read(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         serde_json::from_str(&text).with_context(|| format!("in {}", path.display()))
     }
 }
@@ -83,13 +83,14 @@ pub fn parse_banned(text: &str) -> HashMap<EndpointId, String> {
 
 /// Device ids from [map]'s keys, the ones that parse.
 pub fn ids<V: Clone>(map: &BTreeMap<String, V>) -> impl Iterator<Item = (EndpointId, V)> + '_ {
-    map.iter().filter_map(|(id, value)| match EndpointId::from_str(id) {
-        Ok(id) => Some((id, value.clone())),
-        Err(_) => {
-            tracing::warn!("entitlements: not a device id: {id}");
-            None
-        }
-    })
+    map.iter()
+        .filter_map(|(id, value)| match EndpointId::from_str(id) {
+            Ok(id) => Some((id, value.clone())),
+            Err(_) => {
+                tracing::warn!("entitlements: not a device id: {id}");
+                None
+            }
+        })
 }
 
 /// Counts with no identities in them.
@@ -150,7 +151,11 @@ impl Gate {
     }
 
     pub fn rules(&self) -> Rules {
-        self.0.rules.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.0
+            .rules
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Puts [rules] in force; answers the connected devices they no longer
@@ -175,7 +180,11 @@ impl Gate {
     }
 
     pub fn connected(&self) -> usize {
-        self.0.connected.read().unwrap_or_else(|e| e.into_inner()).len()
+        self.0
+            .connected
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     fn count(&self, connected: &HashMap<EndpointId, Connected>) {
@@ -183,7 +192,9 @@ impl Gate {
         let metrics = &self.0.metrics;
         metrics.connected.set(connected.len() as i64);
         metrics.connected_standard.set(standard as i64);
-        metrics.connected_other.set((connected.len() - standard) as i64);
+        metrics
+            .connected_other
+            .set((connected.len() - standard) as i64);
     }
 }
 

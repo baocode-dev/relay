@@ -27,7 +27,12 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
         ["listen", relay, rest @ ..] => listen(relay.parse()?, rest.first().copied()).await,
         ["dial", relay, id, rest @ ..] => {
             dial(relay.parse()?, id.parse()?, rest.first().copied()).await
@@ -64,7 +69,9 @@ async fn listen(relay: RelayUrl, ca: Option<&str>) -> Result<()> {
     eprintln!("addr: {:?}", endpoint.addr());
     while let Some(incoming) = endpoint.accept().await {
         tokio::spawn(async move {
-            let Ok(connection) = incoming.await else { return };
+            let Ok(connection) = incoming.await else {
+                return;
+            };
             while let Ok((mut send, mut recv)) = connection.accept_bi().await {
                 tokio::spawn(async move {
                     let _ = tokio::io::copy(&mut recv, &mut send).await;

@@ -49,7 +49,10 @@ impl Relay {
         relay_config.access = Arc::new(gate.clone());
         let mut quic = None;
         if let Some(tls) = &config.tls {
-            relay_config.tls = Some(TlsConfig::new(config.bind.https, certs(&config, tls).await?));
+            relay_config.tls = Some(TlsConfig::new(
+                config.bind.https,
+                certs(&config, tls).await?,
+            ));
             if config.quic {
                 quic = Some(QuicConfig::new(config.bind.quic));
             }
@@ -57,8 +60,13 @@ impl Relay {
         let mut server_config = ServerConfig::default();
         server_config.relay = Some(relay_config);
         server_config.quic = quic;
-        let server = Server::spawn(server_config).await.context("starting the relay")?;
-        let service = server.relay_service().cloned().context("no relay service")?;
+        let server = Server::spawn(server_config)
+            .await
+            .context("starting the relay")?;
+        let service = server
+            .relay_service()
+            .cloned()
+            .context("no relay service")?;
 
         let metrics = if config.metrics {
             let mut registry = Registry::default();
@@ -225,9 +233,15 @@ impl Loader {
             ..Rules::default()
         };
         if let Some(path) = &files.entitlements {
-            rules.entitled.extend(ids(&Entitlements::read(path)?.endpoints));
+            rules
+                .entitled
+                .extend(ids(&Entitlements::read(path)?.endpoints));
         }
-        let fetched = self.fetched.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let fetched = self
+            .fetched
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let remote = match (fetched, &files.cache) {
             (Some(fetched), _) => Some(fetched),
             (None, Some(cache)) if cache.exists() => match Entitlements::read(cache) {
@@ -293,7 +307,10 @@ fn apply(loader: &Loader, gate: &Gate, service: &RelayService) -> Result<usize> 
         service.clients().disconnect(*id, None);
     }
     if !out.is_empty() {
-        tracing::info!("access rules changed: {} connected device(s) shut out", out.len());
+        tracing::info!(
+            "access rules changed: {} connected device(s) shut out",
+            out.len()
+        );
     }
     Ok(out.len())
 }

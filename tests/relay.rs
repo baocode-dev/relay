@@ -1,14 +1,17 @@
 //! The relay in dev mode with real iroh endpoints that have no IP
 //! transport: everything they say goes through it.
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use baocode_relay::{
     Relay,
     config::{AccessFiles, Config, Limits},
 };
 use iroh::{
-    Endpoint, EndpointAddr, RelayMode, RelayUrl, SecretKey, TransportAddr,
+    Endpoint, EndpointAddr, RelayConfig, RelayMode, RelayUrl, SecretKey, TransportAddr,
     endpoint::{Connection, presets},
 };
 use tokio::time::timeout;
@@ -27,7 +30,9 @@ async fn relay(access: AccessFiles, limits: Limits) -> (Relay, RelayUrl) {
     config.access = access;
     config.limits = limits;
     let relay = Relay::spawn(config, None).await.unwrap();
-    let url = format!("http://{}", relay.http_addr().unwrap()).parse().unwrap();
+    let url = format!("http://{}", relay.http_addr().unwrap())
+        .parse()
+        .unwrap();
     (relay, url)
 }
 
@@ -61,7 +66,9 @@ fn echo(server: &Endpoint) {
     tokio::spawn(async move {
         while let Some(incoming) = server.accept().await {
             tokio::spawn(async move {
-                let Ok(connection) = incoming.await else { return };
+                let Ok(connection) = incoming.await else {
+                    return;
+                };
                 while let Ok((mut send, mut recv)) = connection.accept_bi().await {
                     tokio::spawn(async move {
                         let _ = tokio::io::copy(&mut recv, &mut send).await;
@@ -90,7 +97,10 @@ async fn round_trip(connection: &Connection, bytes: usize) -> anyhow::Result<()>
 async fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
     let start = Instant::now();
     while !ok() {
-        assert!(start.elapsed() < Duration::from_secs(20), "waited for {what}");
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "waited for {what}"
+        );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
@@ -102,14 +112,24 @@ async fn two_devices_talk_through_it() {
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
-
-    let connection = timeout(Duration::from_secs(15), client.connect(addr(&server, &relays), ALPN))
+    timeout(Duration::from_secs(10), server.online())
         .await
-        .unwrap()
         .unwrap();
+
+    let connection = timeout(
+        Duration::from_secs(15),
+        client.connect(addr(&server, &relays), ALPN),
+    )
+    .await
+    .unwrap()
+    .unwrap();
     round_trip(&connection, 3 << 20).await.unwrap();
-    assert!(connection.paths().iter().any(|p| p.is_relay() && p.is_selected()));
+    assert!(
+        connection
+            .paths()
+            .iter()
+            .any(|p| p.is_relay() && p.is_selected())
+    );
     assert_eq!(relay.gate().connected(), 2);
     assert_eq!(relay.gate().metrics().admitted.get(), 2);
 }
@@ -128,7 +148,9 @@ async fn a_ban_shuts_a_device_out_and_keeps_it_out() {
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
     round_trip(&connection, 1000).await.unwrap();
 
@@ -150,7 +172,10 @@ async fn a_ban_shuts_a_device_out_and_keeps_it_out() {
     assert!(relay.gate().metrics().denied_banned.get() >= 1);
     // Nothing more passes.
     let after = timeout(Duration::from_secs(5), round_trip(&connection, 1000)).await;
-    assert!(!matches!(after, Ok(Ok(()))), "a banned device still got through");
+    assert!(
+        !matches!(after, Ok(Ok(()))),
+        "a banned device still got through"
+    );
     // The other device is still welcome.
     assert_eq!(relay.gate().connected(), 1);
 }
@@ -166,7 +191,9 @@ async fn sending_is_held_to_the_rate_limit() {
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
 
     // 1 MB there and back: each way through a 256 KB/s bucket, about 4 s.
@@ -188,14 +215,20 @@ async fn the_limit_changes_while_running() {
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
 
     relay.service().set_client_rate_limit(None);
     let start = Instant::now();
     round_trip(&connection, 2 << 20).await.unwrap();
     // 2 MB at 64 KB/s would be half a minute.
-    assert!(start.elapsed() < Duration::from_secs(10), "took {:?}", start.elapsed());
+    assert!(
+        start.elapsed() < Duration::from_secs(10),
+        "took {:?}",
+        start.elapsed()
+    );
 }
 
 #[tokio::test]
@@ -206,17 +239,23 @@ async fn when_one_relay_goes_the_other_carries_on() {
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
     round_trip(&connection, 1000).await.unwrap();
 
+    let gone = relays[0].clone();
     first.shutdown().await;
     // What the app's endpoints do when their home relay stays down 3 s
-    // (bao_iroh's relay_watchdog): look again now, rather than at iroh's
-    // next network report up to 26 s on.
+    // (bao_iroh's relay_watchdog): put it in the relay map again, which
+    // makes iroh report now and pick a home that answers, rather than at
+    // its next report up to 26 s on.
     tokio::time::sleep(Duration::from_secs(3)).await;
-    server.network_change().await;
-    client.network_change().await;
+    for end in [&server, &client] {
+        end.insert_relay(gone.clone(), Arc::new(RelayConfig::from(gone.clone())))
+            .await;
+    }
 
     // A new connection finds the way through the second.
     let again = timeout(
@@ -255,14 +294,20 @@ async fn entitlements_stand_on_the_cache_when_the_url_is_down() {
     let (relay, url) = relay(access, unlimited()).await;
     assert!(relay.fetch().await.is_err());
     // The cache was not touched by the failure.
-    assert!(std::fs::read_to_string(&cache).unwrap().contains(&key(1).public().to_string()));
+    assert!(
+        std::fs::read_to_string(&cache)
+            .unwrap()
+            .contains(&key(1).public().to_string())
+    );
 
     let relays = [url];
     let server = endpoint(key(1), &relays).await;
     let client = endpoint(key(2), &relays).await;
     let stranger = endpoint(key(3), &relays).await;
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
     round_trip(&connection, 1000).await.unwrap();
 
@@ -306,7 +351,9 @@ async fn over_tls_with_metrics_as_deployed() {
     .unwrap();
     let relay = Relay::spawn(config, None).await.unwrap();
     assert!(relay.quic_addr().is_some());
-    let url: RelayUrl = format!("https://{}", relay.https_addr().unwrap()).parse().unwrap();
+    let url: RelayUrl = format!("https://{}", relay.https_addr().unwrap())
+        .parse()
+        .unwrap();
     let relays = [url];
     let roots = iroh_relay::tls::CaTlsConfig::custom_roots([cert.cert.der().clone()]);
     let bind = |n| {
@@ -321,7 +368,9 @@ async fn over_tls_with_metrics_as_deployed() {
     let server = bind(1).await.unwrap();
     let client = bind(2).await.unwrap();
     echo(&server);
-    timeout(Duration::from_secs(10), server.online()).await.unwrap();
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
     let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
     round_trip(&connection, 100_000).await.unwrap();
 

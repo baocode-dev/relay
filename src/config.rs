@@ -156,8 +156,8 @@ impl Default for AccessFiles {
 
 impl Config {
     pub fn read(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let text =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         Self::parse(&text).with_context(|| format!("in {}", path.display()))
     }
 
@@ -222,10 +222,16 @@ mod tests {
         .unwrap();
         assert_eq!(config.bind.metrics.port(), 9100);
         assert_eq!(config.bind.https.port(), 443);
-        assert_eq!(config.limits.rate_limit().unwrap().bytes_per_second.get(), 1000);
+        assert_eq!(
+            config.limits.rate_limit().unwrap().bytes_per_second.get(),
+            1000
+        );
         assert_eq!(config.tiers["pro"].bytes_per_second, 9000);
         assert_eq!(config.access.default_tier, "standard");
-        assert!(matches!(config.tls, Some(Tls::Letsencrypt { staging: false, .. })));
+        assert!(matches!(
+            config.tls,
+            Some(Tls::Letsencrypt { staging: false, .. })
+        ));
     }
 
     #[test]
