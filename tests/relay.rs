@@ -385,3 +385,81 @@ async fn over_tls_with_metrics_as_deployed() {
     // No device ids in there.
     assert!(!text.contains(&key(1).public().to_string()));
 }
+
+#[tokio::test]
+async fn behind_a_proxy_plain_http_with_quic_on_the_certificate() {
+    let dir = tempfile::tempdir().unwrap();
+    let cert = rcgen::generate_simple_self_signed(vec!["127.0.0.1".into()]).unwrap();
+    let cert_path = dir.path().join("cert.pem");
+    let key_path = dir.path().join("key.pem");
+    std::fs::write(&cert_path, cert.cert.pem()).unwrap();
+    std::fs::write(&key_path, cert.signing_key.serialize_pem()).unwrap();
+    let config = Config::parse(&format!(
+        r#"
+        hostname = "127.0.0.1"
+        behind_proxy = true
+        [bind]
+        http = "127.0.0.1:0"
+        quic = "127.0.0.1:0"
+        metrics = "127.0.0.1:0"
+        [tls]
+        mode = "files"
+        cert = "{}"
+        key = "{}"
+        "#,
+        cert_path.display(),
+        key_path.display()
+    ))
+    .unwrap();
+    let relay = Relay::spawn(config, None).await.unwrap();
+    // What the proxy passes on to: the relay in plain HTTP, no HTTPS of its own.
+    assert!(relay.https_addr().is_none());
+    let quic_port = relay.quic_addr().unwrap().port();
+    let url: RelayUrl = format!("http://{}", relay.http_addr().unwrap())
+        .parse()
+        .unwrap();
+    let relays = [url.clone()];
+
+    // An end with IP transport, so it asks the relay's QUIC for its address.
+    let roots = iroh_relay::tls::CaTlsConfig::custom_roots([cert.cert.der().clone()]);
+    let map = iroh::RelayMap::empty();
+    map.insert(
+        url.clone(),
+        Arc::new(RelayConfig::new(
+            url,
+            Some(iroh_relay::RelayQuicConfig::new(quic_port)),
+        )),
+    );
+    let probing = Endpoint::builder(presets::Minimal)
+        .secret_key(key(3))
+        .relay_mode(RelayMode::Custom(map))
+        .ca_tls_config(roots)
+        .bind()
+        .await
+        .unwrap();
+    let metrics = format!("http://{}/metrics", relay.metrics_addr().unwrap());
+    timeout(Duration::from_secs(20), async {
+        loop {
+            let text = reqwest::get(&metrics).await.unwrap().text().await.unwrap();
+            if text
+                .lines()
+                .any(|l| l.starts_with("relayserver_qad_connections_total ") && !l.ends_with(" 0"))
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("a QUIC address discovery round trip");
+    drop(probing);
+
+    let server = endpoint(key(1), &relays).await;
+    let client = endpoint(key(2), &relays).await;
+    echo(&server);
+    timeout(Duration::from_secs(10), server.online())
+        .await
+        .unwrap();
+    let connection = client.connect(addr(&server, &relays), ALPN).await.unwrap();
+    round_trip(&connection, 100_000).await.unwrap();
+}

@@ -9,6 +9,11 @@ hostname = "relay-hk1.baocode.dev"
 quic = true
 metrics = true
 
+# Behind a reverse proxy that has ports 80/443 (Caddy, say) and ends TLS:
+# the relay answers in plain HTTP on [bind] http, and [tls] (mode "files",
+# the proxy's certificate) is for QUIC alone. See docs/operations.md.
+# behind_proxy = true
+
 [bind]
 http = "[::]:80"          # captive portal probes (ACME itself uses TLS-ALPN on 443)
 https = "[::]:443"        # the relay (WebSocket over TLS)

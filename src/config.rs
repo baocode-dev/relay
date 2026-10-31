@@ -30,6 +30,11 @@ pub struct Config {
     /// QUIC address discovery (UDP), which hole punching needs. Needs TLS.
     pub quic: bool,
     pub metrics: bool,
+    /// A reverse proxy (Caddy, say) ends TLS for the relay and passes it on
+    /// to `bind.http`: the relay answers there in plain HTTP and `https` is
+    /// not bound. `tls` (files, the proxy's certificate) is then for QUIC
+    /// alone.
+    pub behind_proxy: bool,
 }
 
 impl Default for Config {
@@ -43,6 +48,7 @@ impl Default for Config {
             access: AccessFiles::default(),
             quic: true,
             metrics: true,
+            behind_proxy: false,
         }
     }
 }
@@ -189,6 +195,9 @@ impl Config {
         {
             bail!("letsencrypt needs a hostname");
         }
+        if self.behind_proxy && matches!(self.tls, Some(Tls::Letsencrypt { .. })) {
+            bail!("behind_proxy: the proxy gets the certificate; give it to the relay as files");
+        }
         if self.limits.bytes_per_second == 0 && self.limits.burst_bytes != 0 {
             bail!("burst_bytes needs bytes_per_second");
         }
@@ -248,5 +257,11 @@ mod tests {
         assert!(Config::parse("quic = true").is_err());
         assert!(Config::parse("[tls]\nmode = \"letsencrypt\"\ncontact = \"a\"").is_err());
         assert!(Config::parse("typo = 1").is_err());
+        assert!(
+            Config::parse(
+                "hostname = \"a\"\nbehind_proxy = true\n[tls]\nmode = \"letsencrypt\"\ncontact = \"a\""
+            )
+            .is_err()
+        );
     }
 }
