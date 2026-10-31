@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use iroh_metrics::Registry;
 use iroh_relay::server::{
     self as relay, AcmeConfig, CertConfig, QuicConfig, RelayConfig, RelayService, Server,
@@ -49,12 +49,23 @@ impl Relay {
         relay_config.access = Arc::new(gate.clone());
         let mut quic = None;
         if let Some(tls) = &config.tls {
-            relay_config.tls = Some(TlsConfig::new(
-                config.bind.https,
-                certs(&config, tls).await?,
-            ));
-            if config.quic {
-                quic = Some(QuicConfig::new(config.bind.quic));
+            let certs = certs(&config, tls).await?;
+            if config.behind_proxy {
+                // The proxy ends TLS for the relay, which answers it on
+                // bind.http: the certificate is QUIC's alone.
+                if config.quic {
+                    let CertConfig::Manual { server_config } = certs else {
+                        bail!("behind_proxy needs tls mode files");
+                    };
+                    let mut quic_config = QuicConfig::new(config.bind.quic);
+                    quic_config.server_config = Some(server_config);
+                    quic = Some(quic_config);
+                }
+            } else {
+                relay_config.tls = Some(TlsConfig::new(config.bind.https, certs));
+                if config.quic {
+                    quic = Some(QuicConfig::new(config.bind.quic));
+                }
             }
         }
         let mut server_config = ServerConfig::default();

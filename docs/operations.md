@@ -2,7 +2,7 @@
 
 ## 机器与域名
 
-- 至少两台，放在不同地区。默认内置的是 `relay-hk1.baocode.dev`（香港，线路优先选 CN2 GIA / CMI）和 `relay-jp1.baocode.dev`（日本）。改名或加机器时，要同步改客户端的内置列表（monad `packages/bao_link/lib/src/relays.dart`）。
+- 至少两台，放在不同地区。默认内置的是 `relay-hk1.baocode.dev`（香港，线路优先选 CN2 GIA / CMI）和 `relay-jp1.baocode.dev`（日本），还没部署；已上线的是 `relay-us1.baocode.dev`（洛杉矶，搬瓦工，在 Caddy 后面，见下文）。改名或加机器时，要同步改客户端的内置列表（monad `packages/bao_link/lib/src/relays.dart`）。
 - 配置：1 核 / 1 GB 就能跑，瓶颈是带宽。按月流量计费的套餐，看下面的「带宽估算」。
 - DNS：每台一条 A 记录（有 IPv6 就再加 AAAA），**直接指向机器，不要开 Cloudflare 代理（橙云）**，因为 UDP 7842 和 WebSocket 都要直连。
 - 端口：TCP 80、TCP 443、UDP 7842。云厂商的安全组也要放行。
@@ -43,6 +43,23 @@
    ```
 
    推荐用 `--network host`，因为 UDP 打洞要用到真实的源地址和端口。
+
+## 机器上已有 Caddy 占着 80/443
+
+（`relay-us1` 就是这样：搬瓦工上的 `/root/docker/docker-compose.yml`。）域名和证书交给 Caddy，中继在后面：
+
+- `relay.toml` 里 `behind_proxy = true`：中继在 `[bind] http` 上用明文提供服务，不绑 `https`；`[tls]` 用 `mode = "files"` 指向 Caddy 的证书，只给 UDP 7842 上的 QUIC 地址发现用（每小时重读一次，Caddy 续期后自动跟上）。
+- Caddyfile：
+
+  ```
+  relay-us1.baocode.dev {
+      reverse_proxy baocode-relay:3340
+  }
+  ```
+
+- compose 里中继和 Caddy 在同一个网络，只映射 `7842:7842/udp`；把 Caddy 的 `./caddy/data/caddy/certificates` 只读挂进去。Docker 映射的 UDP 端口走 iptables DNAT，源地址不变，QUIC 地址发现看到的是设备的真实地址。
+- QUIC 用的内核缓冲区（`net.core.rmem_max` / `wmem_max`）是整机的，在宿主机的 `/etc/sysctl.d/` 里设，容器里设不了。
+- 升级：把新的 `baocode-relay` 二进制放进构建目录，`docker compose up -d --build baocode-relay`。
 
 ## 升级
 
