@@ -3,7 +3,7 @@
 # from an unpacked release (baocode-relay-<version>-<arch>.tar.gz), which
 # has the binary next to this deploy/ directory:
 #
-#   sudo ./deploy/install.sh relay-hk1.baocode.dev ops@baocode.dev
+#   sudo ./deploy/install.sh relay.example.com ops@example.com
 #
 # Again with a newer release to upgrade: config, bans and certificates are
 # kept.

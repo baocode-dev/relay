@@ -3,7 +3,7 @@
 
 # This machine's domain. Its DNS record must point straight at the machine
 # (no CDN proxy): UDP 7842 and the WebSocket need it.
-hostname = "relay-hk1.baocode.dev"
+hostname = "relay.example.com"
 
 # QUIC address discovery on UDP 7842, which hole punching needs.
 quic = true
@@ -22,7 +22,7 @@ metrics = "127.0.0.1:9090"
 
 [tls]
 mode = "letsencrypt"
-contact = "ops@baocode.dev"
+contact = "ops@example.com"
 dir = "/var/lib/baocode-relay/certs"
 # staging = true          # try the setup out first without Let's Encrypt's rate limits
 
@@ -49,7 +49,7 @@ burst_bytes = 16777216       # 16 MiB
 default_tier = "standard"
 banned = "/etc/baocode-relay/banned.txt"
 # entitlements = "/etc/baocode-relay/entitlements.json"
-# entitlements_url = "https://accounts.baocode.dev/relay/entitlements"
+# entitlements_url = "https://accounts.example.com/relay/entitlements"
 # entitlements_token = "..."
 cache = "/var/lib/baocode-relay/entitlements.cache.json"
 reload_secs = 5

@@ -15,7 +15,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
-    /// The relay's domain, e.g. `relay-hk1.baocode.dev`: what the
+    /// The relay's domain, e.g. `relay.example.com`: what the
     /// certificate is for.
     pub hostname: String,
     pub bind: Bind,
@@ -213,12 +213,12 @@ mod tests {
     fn a_full_file_reads() {
         let config = Config::parse(
             r#"
-            hostname = "relay-hk1.baocode.dev"
+            hostname = "relay.example.com"
             [bind]
             metrics = "127.0.0.1:9100"
             [tls]
             mode = "letsencrypt"
-            contact = "ops@baocode.dev"
+            contact = "ops@example.com"
             [limits]
             bytes_per_second = 1000
             burst_bytes = 2000

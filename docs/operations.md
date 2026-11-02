@@ -2,14 +2,15 @@
 
 ## 机器与域名
 
-- 至少两台，放在不同地区。默认内置的是 `relay-hk1.baocode.dev`（香港，线路优先选 CN2 GIA / CMI）和 `relay-jp1.baocode.dev`（日本），还没部署；已上线的是 `relay-us1.baocode.dev`（洛杉矶，搬瓦工，在 Caddy 后面，见下文）。改名或加机器时，要同步改客户端的内置列表（monad `packages/bao_link/lib/src/relays.dart`）。
-- 配置：1 核 / 1 GB 就能跑，瓶颈是带宽。按月流量计费的套餐，看下面的「带宽估算」。
-- DNS：每台一条 A 记录（有 IPv6 就再加 AAAA），**直接指向机器，不要开 Cloudflare 代理（橙云）**，因为 UDP 7842 和 WebSocket 都要直连。
+- 一台就能跑。要让很多设备稳定使用，建议至少两台，放在不同地区，一台出问题时设备会自动走另一台。
+- 配置：1 核 / 1 GB 足够，瓶颈是带宽。按月流量计费的套餐，见下面的「带宽估算」。
+- DNS：每台一条 A 记录（有 IPv6 就再加 AAAA），**直接指向机器，不要开 CDN 代理**，因为 UDP 端口和 WebSocket 都要直连。
 - 端口：TCP 80、TCP 443、UDP 7842。云厂商的安全组也要放行。
+- 客户端里内置的中继列表要和实际部署一致。加机器或改名后，记得同步客户端的列表。
 
 ## 首次部署
 
-1. 从 `relay` 仓库的 GitHub Release 下载对应架构的包（`baocode-relay-vX.Y.Z-linux-x86_64.tar.gz` 或 `-aarch64`），传到机器上：
+1. 从本仓库的 GitHub Release 下载对应架构的包（`baocode-relay-vX.Y.Z-linux-x86_64.tar.gz` 或 `-aarch64`），传到机器上：
 
    ```sh
    gh release download vX.Y.Z -R baocode-dev/relay -p '*x86_64*'
@@ -20,7 +21,7 @@
 
    ```sh
    tar xzf baocode-relay-*-x86_64.tar.gz && cd baocode-relay-*-x86_64
-   sudo ./deploy/install.sh relay-hk1.baocode.dev ops@baocode.dev
+   sudo ./deploy/install.sh relay.example.com ops@example.com
    ```
 
    脚本会：建 `baocode-relay` 系统用户；装二进制；配置不存在时写 `/etc/baocode-relay/relay.toml`；写空的 `banned.txt`；调大 QUIC 用的内核缓冲区；ufw / firewalld 开着的话就放行端口；装 systemd 服务并启动。
@@ -28,7 +29,7 @@
 3. 等一分钟，Let's Encrypt 证书签下来后，在任何地方检查：
 
    ```sh
-   curl -fsS https://relay-hk1.baocode.dev/healthz
+   curl -fsS https://relay.example.com/healthz
    ```
 
    第一次部署想先试流程，可以在 `relay.toml` 里 `[tls]` 加 `staging = true`，用 Let's Encrypt 的测试环境（证书不受信任，客户端连不上，只用来验证签发），确认没问题后删掉 `/var/lib/baocode-relay/certs` 再改回去。
@@ -44,20 +45,20 @@
 
    推荐用 `--network host`，因为 UDP 打洞要用到真实的源地址和端口。
 
-## 机器上已有 Caddy 占着 80/443
+## 机器上已有 Caddy / nginx 占着 80/443
 
-（`relay-us1` 就是这样：搬瓦工上的 `/root/docker/docker-compose.yml`。）域名和证书交给 Caddy，中继在后面：
+域名和证书交给反向代理，中继在后面：
 
-- `relay.toml` 里 `behind_proxy = true`：中继在 `[bind] http` 上用明文提供服务，不绑 `https`；`[tls]` 用 `mode = "files"` 指向 Caddy 的证书，只给 UDP 7842 上的 QUIC 地址发现用（每小时重读一次，Caddy 续期后自动跟上）。
+- `relay.toml` 里 `behind_proxy = true`：中继在 `[bind] http` 上用明文提供服务，不绑 `https`；`[tls]` 用 `mode = "files"` 指向代理的证书，只给 UDP 7842 上的 QUIC 地址发现用（每小时重读一次，代理续期后自动跟上）。
 - Caddyfile：
 
   ```
-  relay-us1.baocode.dev {
+  relay.example.com {
       reverse_proxy baocode-relay:3340
   }
   ```
 
-- compose 里中继和 Caddy 在同一个网络，只映射 `7842:7842/udp`；把 Caddy 的 `./caddy/data/caddy/certificates` 只读挂进去。Docker 映射的 UDP 端口走 iptables DNAT，源地址不变，QUIC 地址发现看到的是设备的真实地址。
+- compose 里中继和代理在同一个网络，只映射 `7842:7842/udp`；把代理的证书目录只读挂进去。Docker 映射的 UDP 端口走 iptables DNAT，源地址不变，QUIC 地址发现看到的是设备的真实地址。
 - QUIC 用的内核缓冲区（`net.core.rmem_max` / `wmem_max`）是整机的，在宿主机的 `/etc/sysctl.d/` 里设，容器里设不了。
 - 升级：把新的 `baocode-relay` 二进制放进构建目录，`docker compose up -d --build baocode-relay`。
 
@@ -76,7 +77,7 @@
 | 其它配置 | 改完 `systemctl restart baocode-relay` |
 | 看指标 | 在机器上 `curl -s 127.0.0.1:9090/metrics`，或者用 SSH 隧道接 Prometheus |
 
-设备 id 就是 EndpointId（64 位十六进制）。桌面端设置页「手机」一栏能看到本机的，配对的手机也会显示。
+设备 id 就是 EndpointId（64 位十六进制）。
 
 `reload` 出错时（比如名单文件写坏了），旧规则继续生效，日志里只报一次。
 
@@ -94,13 +95,13 @@
 
 iroh-relay 自带的（前缀 `relayserver_`）：`bytes_sent`、`bytes_recv`、`bytes_rx_ratelimited_total`、`conns_rx_ratelimited_total`、`accepts`、`disconnects` 等。
 
-这些指标都只有总数，不含设备 id、IP 或流量内容，也不要往外公开。
+这些指标都只有总数，不含设备 id、IP 或流量内容。
 
 ## 带宽估算
 
 大多数连接都会打洞直连，中继只承担打不通的那部分，以及打洞成功之前的头一两秒。
 
-- 走中继的流量 = 手机看界面产生的流量 × 走中继的比例。正常使用时，会话增量和终端输出一台设备每天大约几 MB；打开大文件或图片时会有突发。
+- 走中继的流量 = 两端实际产生的流量 × 走中继的比例。
 - 限速默认是每台设备持续 4 MB/s、突发 16 MB。带宽上限 = 同时活跃的走中继设备数 × 实际速率，正常远低于这个上限。
 
 ## 浸泡测试
@@ -110,7 +111,7 @@ iroh-relay 自带的（前缀 `relayserver_`）：`bytes_sent`、`bytes_recv`、
 ```sh
 # 在另一台机器上（不要和中继同机），对着已部署的中继跑 200 对、2 小时
 cargo build --release --example soak
-./target/release/examples/soak https://relay-hk1.baocode.dev 200 120 | tee soak.log
+./target/release/examples/soak https://relay.example.com 200 120 | tee soak.log
 
 # 同时在中继机器上每 30 秒记一次内存和 CPU
 while sleep 30; do echo "$(date +%T) $(ps -o rss=,%cpu= -C baocode-relay)"; done | tee rss.log
